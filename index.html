@@ -93,6 +93,51 @@
     border-radius: 8px; padding: 8px 12px; font-family: var(--mono);
     font-size: 13px; cursor: pointer; width: 100%; margin-top: 4px;
   }
+
+  /* ---- handicap (setup) ---- */
+  .hc-setup-btn {
+    display: block; width: 100%; background: none; border: 1px dashed var(--rail-dark); color: var(--ivory-dim);
+    border-radius: 8px; padding: 7px 10px; font-family: var(--mono); font-size: 11px; cursor: pointer;
+    margin: 0 0 10px; text-align: left; letter-spacing: 0.3px;
+  }
+  .hc-setup-btn.set { border-style: solid; border-color: var(--win); color: var(--win); }
+
+  /* ---- handicap modal ---- */
+  .hc-type-row { display: flex; gap: 6px; margin-bottom: 12px; }
+  .hc-type-btn {
+    flex: 1; background: none; border: 1px solid var(--rail-dark); color: var(--ivory-dim);
+    border-radius: 8px; padding: 8px 4px; font-family: var(--mono); font-size: 10px; cursor: pointer;
+  }
+  .hc-type-btn.active { border-color: var(--chalk); color: var(--ivory); background: rgba(91,143,196,0.15); }
+  .hc-hint { font-size: 10px; color: var(--ivory-dim); line-height: 1.4; margin: -4px 0 10px; }
+  .hc-sum-row { font-size: 11px; color: var(--ivory-dim); margin-bottom: 8px; }
+  .hc-sum-row b { color: var(--foul); }
+  .hc-sum-row.match b { color: var(--win); }
+  .hc-ball-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; max-height: 220px; overflow-y: auto; padding-right: 2px; }
+  .hc-mini-ball {
+    aspect-ratio: 1; border-radius: 50%; border: 2px solid transparent; display: flex; align-items: center; justify-content: center;
+    position: relative; cursor: pointer; font-weight: 700; font-size: 12px; color: #fff8ec; padding: 0;
+    box-shadow: inset -2px -3px 4px rgba(0,0,0,0.35), inset 1px 2px 3px rgba(255,255,255,0.25);
+  }
+  .hc-mini-ball .stripe { position: absolute; top: 38%; left: 6%; right: 6%; height: 24%; background: #fff8ec; border-radius: 3px; }
+  .hc-mini-ball .num { background: #fff8ec; color: #1a1a1a; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 9px; z-index: 1; }
+  .hc-mini-ball.selected { border-color: var(--win); box-shadow: 0 0 0 2px var(--win); }
+  .hc-mini-ball.claimed { opacity: 0.25; cursor: not-allowed; }
+
+  /* ---- handicap chip (in-game scoreboard) ---- */
+  .hc-chip {
+    display: inline-block; font-size: 9px; letter-spacing: 0.5px; color: var(--win);
+    border: 1px solid var(--win); border-radius: 10px; padding: 2px 8px; margin-bottom: 8px;
+  }
+  .mini-ball.hc { box-shadow: 0 0 0 2px var(--win), inset -2px -2px 3px rgba(0,0,0,0.35); }
+  .ball.handicap-preset { box-shadow: 0 0 0 2px var(--win); }
+
+  /* ---- 5-ball tiebreak shootout ---- */
+  .tiebreak-banner {
+    font-size: 11px; text-align: center; color: var(--win); border: 1px dashed var(--win);
+    border-radius: 8px; padding: 9px 10px; margin-bottom: 10px; line-height: 1.5; letter-spacing: 0.2px;
+  }
+  .tiebreak-banner b { color: var(--foul); }
   .primary-btn {
     width: 100%; background: var(--rail); color: #1a120a; border: none; border-radius: 10px;
     padding: 14px; font-family: var(--display); font-weight: 400; font-size: 20px;
@@ -259,10 +304,14 @@ let state = null;
 let saveTimer = null;
 let foulNext = false; // ephemeral UI flag, not persisted — marks the next tapped ball as a no-score foul
 
+function freshPlayer() {
+  return { name: '', handicapType: 'none', handicapTarget: TARGET_SCORE, handicapSpot: 0, handicapSpotBalls: [] };
+}
+
 function freshState() {
   return {
     phase: 'setup',
-    players: [{ name: '' }, { name: '' }],
+    players: [freshPlayer(), freshPlayer()],
     bet: '',
     raceTo: 2,
     raceWins: {},
@@ -272,6 +321,7 @@ function freshState() {
     currentTurn: 0,
     winnerIdx: null,
     matchWinnerIdx: null,
+    tiebreak: null, // 5-ball shootout state when a rack ties at the highest score with no handicaps in play
   };
 }
 
@@ -318,11 +368,66 @@ function nextUpBall() {
   return r.length ? r[0] : null;
 }
 
+// ---------- handicaps ----------
+function targetFor(playerIdx) {
+  const p = state.players[playerIdx];
+  if (p && p.handicapType === 'target' && p.handicapTarget) return p.handicapTarget;
+  return TARGET_SCORE;
+}
+
+function handicapLabel(p) {
+  if (!p || !p.handicapType || p.handicapType === 'none') return null;
+  if (p.handicapType === 'target') return `TARGET ${p.handicapTarget || TARGET_SCORE}`;
+  if (p.handicapType === 'spot') return `+${p.handicapSpot || 0} SPOT`;
+  return null;
+}
+
+function anyHandicapActive() {
+  return state.players.some(p => p.handicapType && p.handicapType !== 'none');
+}
+
+// builds a fresh rack's potted/scores, pre-filling any "point spot" handicap balls
+// (removed from the table and scored straight to that player) and resolving an
+// instant win if a spot handicap alone is enough to hit a player's target.
+function buildFreshRack(playersArr) {
+  const potted = {};
+  const scores = {};
+  playersArr.forEach((p, i) => {
+    scores[i] = 0;
+    if (p.handicapType === 'spot' && Array.isArray(p.handicapSpotBalls)) {
+      p.handicapSpotBalls.forEach(n => {
+        if (!potted[n]) {
+          potted[n] = { by: i, foul: false, handicap: true };
+          scores[i] += n;
+        }
+      });
+    }
+  });
+  let winnerIdx = null;
+  playersArr.forEach((p, i) => {
+    const t = (p.handicapType === 'target' && p.handicapTarget) ? p.handicapTarget : TARGET_SCORE;
+    if (scores[i] >= t && (winnerIdx === null || scores[i] > scores[winnerIdx])) winnerIdx = i;
+  });
+  return { potted, scores, winnerIdx };
+}
+
+// after all 15 balls are potted with nobody hitting their target, a tie at the
+// highest score (only possible/relevant in a standard, no-handicap game) triggers
+// a 5-ball (11-15) shootout — first to pot 3 balls takes the rack.
+function checkTiebreakTrigger(scores) {
+  if (anyHandicapActive()) return null;
+  const vals = state.players.map((_, i) => scores[i] || 0);
+  const max = Math.max(...vals);
+  const tied = vals.map((v, i) => (v === max ? i : -1)).filter(i => i >= 0);
+  return tied.length > 1 ? tied : null;
+}
+
 function ballsNeeded(playerIdx) {
   const score = state.scores[playerIdx] || 0;
-  const need = TARGET_SCORE - score;
+  const target = targetFor(playerIdx);
+  const need = target - score;
   if (need <= 0) return { count: 0, impossible: false, met: true };
-  const remaining = remainingBalls().slice().sort((a, b) => b - a);
+  const remaining = remainingBalls().slice().sort((a, b) => a - b); // ascending — starts from the next ball up
   let sum = 0, count = 0;
   for (const v of remaining) {
     if (sum >= need) break;
@@ -348,14 +453,20 @@ function potBall(num, isFoul) {
   const log = [{ ball: num, by: shooter, foul: !!isFoul, ts: Date.now() }, ...state.log];
 
   let winnerIdx = null;
-  if (!isFoul && scores[shooter] >= TARGET_SCORE) winnerIdx = shooter;
+  let tiebreak = null;
+  if (!isFoul && scores[shooter] >= targetFor(shooter)) winnerIdx = shooter;
   if (winnerIdx === null && Object.keys(potted).length === 15) {
-    let best = 0, bestScore = -1;
-    state.players.forEach((_, i) => {
-      const s = scores[i] || 0;
-      if (s > bestScore) { bestScore = s; best = i; }
-    });
-    winnerIdx = best;
+    const tied = checkTiebreakTrigger(scores);
+    if (tied) {
+      tiebreak = { candidates: tied, potted: {}, tallies: Object.fromEntries(tied.map(i => [i, 0])), currentTurn: tied[0], winnerIdx: null };
+    } else {
+      let best = 0, bestScore = -1;
+      state.players.forEach((_, i) => {
+        const s = scores[i] || 0;
+        if (s > bestScore) { bestScore = s; best = i; }
+      });
+      winnerIdx = best;
+    }
   }
 
   let raceWins = state.raceWins;
@@ -365,7 +476,49 @@ function potBall(num, isFoul) {
     if (raceWins[winnerIdx] >= state.raceTo) matchWinnerIdx = winnerIdx;
   }
 
-  setState({ potted, scores, log, winnerIdx, raceWins, matchWinnerIdx });
+  setState({ potted, scores, log, winnerIdx, raceWins, matchWinnerIdx, tiebreak });
+}
+
+// ---------- 5-ball shootout (balls 11-15, first to pot 3 wins the rack) ----------
+function tiebreakPot(num) {
+  if (!state.tiebreak || state.tiebreak.winnerIdx !== null) return;
+  if (state.tiebreak.potted[num]) return;
+  const shooter = state.tiebreak.currentTurn;
+  const potted = { ...state.tiebreak.potted, [num]: { by: shooter } };
+  const tallies = { ...state.tiebreak.tallies, [shooter]: (state.tiebreak.tallies[shooter] || 0) + 1 };
+
+  let winnerIdx = null;
+  if (tallies[shooter] >= 3) winnerIdx = shooter;
+  if (winnerIdx === null && Object.keys(potted).length === 5) {
+    // all 5 balls gone with no one reaching 3 (only possible with 3+ tied candidates) — most pots wins
+    let best = state.tiebreak.candidates[0], bestT = -1;
+    state.tiebreak.candidates.forEach(i => { if ((tallies[i] || 0) > bestT) { bestT = tallies[i] || 0; best = i; } });
+    winnerIdx = best;
+  }
+
+  let raceWins = state.raceWins;
+  let matchWinnerIdx = null;
+  let mainWinnerIdx = state.winnerIdx;
+  if (winnerIdx !== null) {
+    raceWins = { ...raceWins, [winnerIdx]: (raceWins[winnerIdx] || 0) + 1 };
+    if (raceWins[winnerIdx] >= state.raceTo) matchWinnerIdx = winnerIdx;
+    mainWinnerIdx = winnerIdx;
+  }
+
+  setState({
+    tiebreak: { ...state.tiebreak, potted, tallies, winnerIdx },
+    winnerIdx: mainWinnerIdx,
+    raceWins,
+    matchWinnerIdx,
+  });
+}
+
+function tiebreakEndTurn() {
+  if (!state.tiebreak || state.tiebreak.winnerIdx !== null) return;
+  const cands = state.tiebreak.candidates;
+  const idx = cands.indexOf(state.tiebreak.currentTurn);
+  const next = cands[(idx + 1) % cands.length];
+  setState({ tiebreak: { ...state.tiebreak, currentTurn: next } });
 }
 
 function endTurn() {
@@ -386,22 +539,33 @@ function undoLast() {
 
 // full reset of the CURRENT rack — unfreezes any winner state and,
 // if a rack win had already been tallied, rolls that tally back too.
+// re-applies any point-spot handicaps to the freshly racked balls.
 function resetCurrentRack() {
   let raceWins = state.raceWins;
   if (state.winnerIdx !== null) {
     raceWins = { ...raceWins };
     raceWins[state.winnerIdx] = Math.max(0, (raceWins[state.winnerIdx] || 0) - 1);
   }
+  const { potted, scores, winnerIdx } = buildFreshRack(state.players);
+  if (winnerIdx !== null) raceWins = { ...raceWins, [winnerIdx]: (raceWins[winnerIdx] || 0) + 1 };
   setState({
-    scores: {}, potted: {}, log: [], currentTurn: 0,
-    winnerIdx: null, matchWinnerIdx: null, raceWins,
+    scores, potted, log: [], currentTurn: 0,
+    winnerIdx, matchWinnerIdx: null, raceWins, tiebreak: null,
   });
 }
 
-// advance to the next rack after a legitimate win (keeps the tally)
+// advance to the next rack after a legitimate win (keeps the tally),
+// re-applying any point-spot handicaps to the new rack.
 function nextRack() {
   const startIdx = state.winnerIdx !== null ? state.winnerIdx : state.currentTurn;
-  setState({ scores: {}, potted: {}, log: [], currentTurn: startIdx, winnerIdx: null });
+  const { potted, scores, winnerIdx } = buildFreshRack(state.players);
+  let raceWins = state.raceWins;
+  let matchWinnerIdx = null;
+  if (winnerIdx !== null) {
+    raceWins = { ...raceWins, [winnerIdx]: (raceWins[winnerIdx] || 0) + 1 };
+    if (raceWins[winnerIdx] >= state.raceTo) matchWinnerIdx = winnerIdx;
+  }
+  setState({ scores, potted, log: [], currentTurn: startIdx, winnerIdx, raceWins, matchWinnerIdx, tiebreak: null });
 }
 
 function newMatch() {
@@ -459,6 +623,117 @@ function showEditBetRace() {
   betInput.focus();
 }
 
+function showHandicapModal(i) {
+  const player = state.players[i];
+  let type = player.handicapType || 'none';
+  let target = player.handicapTarget || TARGET_SCORE;
+  let spotAmount = player.handicapSpot || 0;
+  let spotBalls = Array.isArray(player.handicapSpotBalls) ? [...player.handicapSpotBalls] : [];
+
+  // balls another player's point-spot handicap has already claimed — can't reuse them
+  const claimed = new Set();
+  state.players.forEach((p, j) => {
+    if (j !== i && p.handicapType === 'spot' && Array.isArray(p.handicapSpotBalls)) {
+      p.handicapSpotBalls.forEach(n => claimed.add(n));
+    }
+  });
+
+  const overlay = el('div', 'modal-overlay');
+  const box = el('div', 'modal-box');
+  box.appendChild(el('div', 'modal-msg', `Handicap — ${escapeHtml(player.name || 'Player ' + (i + 1))}`));
+
+  const body = el('div');
+  box.appendChild(body);
+
+  function renderBody() {
+    body.innerHTML = '';
+
+    const typeRow = el('div', 'hc-type-row');
+    [['none', 'None'], ['target', 'Adjusted target'], ['spot', 'Point spot']].forEach(([val, label]) => {
+      const btn = el('button', 'hc-type-btn' + (type === val ? ' active' : ''), label);
+      btn.onclick = () => { type = val; renderBody(); };
+      typeRow.appendChild(btn);
+    });
+    body.appendChild(typeRow);
+
+    if (type === 'target') {
+      const f = el('div', 'modal-field');
+      f.appendChild(el('label', '', 'TARGET SCORE (default 61)'));
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.min = '1'; inp.value = target;
+      inp.oninput = (e) => { target = parseInt(e.target.value) || TARGET_SCORE; };
+      f.appendChild(inp);
+      body.appendChild(f);
+      body.appendChild(el('div', 'hc-hint', 'Give the stronger player a higher target (e.g. 70-80) and/or the weaker one a lower target (e.g. 40-50). Anyone left on "None" still races to 61.'));
+    }
+
+    if (type === 'spot') {
+      const f = el('div', 'modal-field');
+      f.appendChild(el('label', '', 'SPOT AMOUNT (e.g. 20)'));
+      const inp = document.createElement('input');
+      inp.type = 'number'; inp.min = '1'; inp.value = spotAmount || '';
+      inp.oninput = (e) => { spotAmount = parseInt(e.target.value) || 0; renderBody(); };
+      f.appendChild(inp);
+      body.appendChild(f);
+
+      body.appendChild(el('div', 'hc-hint', "Pick balls that add up to the spot amount — they're pulled from the rack before play and scored straight to this player (e.g. +20 = ball 15 + ball 5; +25 = ball 15 + ball 10)."));
+
+      const sum = spotBalls.reduce((a, b) => a + b, 0);
+      const sumRow = el('div', 'hc-sum-row' + (sum === spotAmount && spotAmount > 0 ? ' match' : ''), `Selected: <b>${sum}</b> / ${spotAmount || 0}`);
+      body.appendChild(sumRow);
+
+      const grid = el('div', 'hc-ball-grid');
+      for (let n = 1; n <= 15; n++) {
+        const isClaimed = claimed.has(n);
+        const isSelected = spotBalls.includes(n);
+        const b = el('button', 'hc-mini-ball' + (isSelected ? ' selected' : '') + (isClaimed ? ' claimed' : ''));
+        b.style.background = BALL_COLORS[n];
+        if (n >= 9) b.appendChild(el('div', 'stripe'));
+        b.appendChild(el('span', 'num', n));
+        b.disabled = isClaimed;
+        b.title = isClaimed ? "already claimed by another player's handicap" : '';
+        b.onclick = () => {
+          spotBalls = isSelected ? spotBalls.filter(x => x !== n) : [...spotBalls, n];
+          renderBody();
+        };
+        grid.appendChild(b);
+      }
+      body.appendChild(grid);
+    }
+  }
+  renderBody();
+
+  const btns = el('div', 'modal-btns');
+  const no = el('button', 'modal-btn no', 'Cancel');
+  const yes = el('button', 'modal-btn yes', 'Save');
+  no.onclick = () => document.body.removeChild(overlay);
+  yes.onclick = () => {
+    if (type === 'spot') {
+      const sum = spotBalls.reduce((a, b) => a + b, 0);
+      if (spotAmount > 0 && sum !== spotAmount) {
+        yes.style.borderColor = 'var(--foul)';
+        yes.style.color = 'var(--foul)';
+        setTimeout(() => { yes.style.borderColor = ''; yes.style.color = ''; }, 700);
+        return;
+      }
+    }
+    const players = [...state.players];
+    players[i] = {
+      ...players[i],
+      handicapType: type,
+      handicapTarget: type === 'target' ? (target || TARGET_SCORE) : (players[i].handicapTarget || TARGET_SCORE),
+      handicapSpot: type === 'spot' ? spotAmount : 0,
+      handicapSpotBalls: type === 'spot' ? spotBalls : [],
+    };
+    document.body.removeChild(overlay);
+    setState({ players });
+  };
+  btns.appendChild(no); btns.appendChild(yes);
+  box.appendChild(btns);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+}
+
 function render() {
   const root = document.getElementById('root');
   root.innerHTML = '';
@@ -472,8 +747,8 @@ function el(tag, cls, html) {
   return e;
 }
 
-function miniBall(n) {
-  const b = el('div', 'mini-ball');
+function miniBall(n, isHc) {
+  const b = el('div', 'mini-ball' + (isHc ? ' hc' : ''));
   b.style.background = BALL_COLORS[n];
   if (n >= 9) b.appendChild(el('div', 'stripe'));
   b.appendChild(el('span', 'num', n));
@@ -497,7 +772,7 @@ function renderSetup() {
     input.value = p.name;
     input.oninput = (e) => {
       const players = [...state.players];
-      players[i] = { name: e.target.value };
+      players[i] = { ...players[i], name: e.target.value };
       state = { ...state, players };
       queueSave();
     };
@@ -508,11 +783,16 @@ function renderSetup() {
       row.appendChild(rm);
     }
     felt.appendChild(row);
+
+    const hcLabel = handicapLabel(p);
+    const hcBtn = el('button', 'hc-setup-btn' + (hcLabel ? ' set' : ''), hcLabel || '+ handicap');
+    hcBtn.onclick = () => showHandicapModal(i);
+    felt.appendChild(hcBtn);
   });
 
   if (state.players.length < 4) {
     const add = el('button', 'ghost-btn', '+ Add player');
-    add.onclick = () => setState({ players: [...state.players, { name: '' }] });
+    add.onclick = () => setState({ players: [...state.players, freshPlayer()] });
     felt.appendChild(add);
   }
 
@@ -541,8 +821,15 @@ function renderSetup() {
 
   const startBtn = el('button', 'primary-btn', "RACK 'EM — START GAME");
   startBtn.onclick = () => {
-    const names = state.players.map((p, i) => ({ name: p.name.trim() || `Player ${i + 1}` }));
-    setState({ players: names, phase: 'game' });
+    const names = state.players.map((p, i) => ({ ...p, name: p.name.trim() || `Player ${i + 1}` }));
+    const { potted, scores, winnerIdx } = buildFreshRack(names);
+    let raceWins = {};
+    let matchWinnerIdx = null;
+    if (winnerIdx !== null) {
+      raceWins = { [winnerIdx]: 1 };
+      if (1 >= state.raceTo) matchWinnerIdx = winnerIdx;
+    }
+    setState({ players: names, phase: 'game', potted, scores, log: [], currentTurn: 0, winnerIdx, raceWins, matchWinnerIdx, tiebreak: null });
   };
   felt.appendChild(startBtn);
 
@@ -551,32 +838,51 @@ function renderSetup() {
 }
 
 function renderPlayerCol(i) {
-  const isActive = i === state.currentTurn && state.winnerIdx === null;
+  const shootoutLive = state.tiebreak && state.tiebreak.winnerIdx === null;
+  const isActive = shootoutLive ? i === state.tiebreak.currentTurn : (i === state.currentTurn && state.winnerIdx === null);
   const isWinner = i === state.winnerIdx;
   const col = el('div', 'player-col' + (isActive ? ' active' : '') + (isWinner ? ' winner' : ''));
   col.appendChild(el('div', 'pname', escapeHtml(state.players[i].name)));
+
+  const hcLabel = handicapLabel(state.players[i]);
+  if (hcLabel) col.appendChild(el('div', 'hc-chip', hcLabel));
 
   const potted = pottedByPlayer(i);
   const box = el('div', 'potted-box' + (potted.length === 0 ? ' empty' : ''));
   if (potted.length === 0) {
     box.appendChild(el('span', 'placeholder', 'no balls yet'));
   } else {
-    potted.forEach(n => box.appendChild(miniBall(n)));
+    potted.forEach(n => box.appendChild(miniBall(n, state.potted[n] && state.potted[n].handicap)));
   }
   col.appendChild(box);
 
-  const nb = ballsNeeded(i);
-  let capText;
-  let capClass = 'needs-caption';
-  if (nb.met) capText = `<b>target met</b>`;
-  else if (nb.impossible) { capText = `can't reach 61 this rack`; capClass += ' impossible'; }
-  else capText = `needs <b>${nb.count}</b> more ball${nb.count === 1 ? '' : 's'}`;
-  col.appendChild(el('div', capClass, capText));
+  if (state.tiebreak) {
+    if (state.tiebreak.candidates.includes(i)) {
+      const t = state.tiebreak.tallies[i] || 0;
+      col.appendChild(el('div', 'needs-caption', `shootout: <b>${t}/3</b>`));
+    } else {
+      col.appendChild(el('div', 'needs-caption', `tied at ${state.scores[i] || 0}`));
+    }
+  } else {
+    const nb = ballsNeeded(i);
+    let capText;
+    let capClass = 'needs-caption';
+    if (nb.met) capText = `<b>target met</b>`;
+    else if (nb.impossible) { capText = `can't reach ${targetFor(i)} this rack`; capClass += ' impossible'; }
+    else capText = `needs <b>${nb.count}</b> more ball${nb.count === 1 ? '' : 's'}`;
+    col.appendChild(el('div', capClass, capText));
+  }
 
   col.appendChild(el('div', 'pscore', state.scores[i] || 0));
   col.appendChild(el('div', 'pscore-lbl', 'SCORE'));
   if (isActive) col.appendChild(el('div', 'turn-dot'));
-  col.onclick = () => { if (state.winnerIdx === null) setState({ currentTurn: i }); };
+  col.onclick = () => {
+    if (shootoutLive) {
+      if (state.tiebreak.candidates.includes(i)) setState({ tiebreak: { ...state.tiebreak, currentTurn: i } });
+    } else if (state.winnerIdx === null) {
+      setState({ currentTurn: i });
+    }
+  };
   return col;
 }
 
@@ -589,10 +895,51 @@ function renderCenterPanel() {
       <div class="sub">${state.raceWins[state.matchWinnerIdx]} racks won ${state.bet ? '· bet ' + escapeHtml(state.bet) : ''}</div>`;
     center.appendChild(banner);
   } else if (state.winnerIdx !== null) {
+    const viaShootout = state.tiebreak && state.tiebreak.winnerIdx === state.winnerIdx;
     const banner = el('div', 'winner-banner');
     banner.innerHTML = `<div class="trophy-line">${escapeHtml(state.players[state.winnerIdx].name)} TAKES THE RACK</div>
-      <div class="sub">${state.scores[state.winnerIdx] || 0} points this rack</div>`;
+      <div class="sub">${state.scores[state.winnerIdx] || 0} points this rack${viaShootout ? ' · won the 5-ball shootout' : ''}</div>`;
     center.appendChild(banner);
+  }
+
+  const shootoutLive = state.tiebreak && state.tiebreak.winnerIdx === null;
+  if (shootoutLive) {
+    const raceBarTop = el('div', 'race-bar');
+    const lw = el('div', 'race-wins', `${state.raceWins[0] || 0}<span class="lbl">${escapeHtml(shortName(0))}</span>`);
+    const midTop = el('div', 'race-mid', `bet ${escapeHtml(state.bet || '—')} · race to ${state.raceTo}`);
+    midTop.onclick = showEditBetRace;
+    const rwTop = state.players.length === 2 ? el('div', 'race-wins', `${state.raceWins[1] || 0}<span class="lbl">${escapeHtml(shortName(1))}</span>`) : el('div');
+    raceBarTop.appendChild(lw); raceBarTop.appendChild(midTop); raceBarTop.appendChild(rwTop);
+    center.appendChild(raceBarTop);
+
+    const tieBanner = el('div', 'tiebreak-banner');
+    const names = state.tiebreak.candidates.map(i => escapeHtml(state.players[i].name)).join(' vs ');
+    tieBanner.innerHTML = `<b>TIE at ${state.scores[state.tiebreak.candidates[0]] || 0}</b> — 5-BALL SHOOTOUT<br>${names} · first to pot 3 balls wins the rack`;
+    center.appendChild(tieBanner);
+    center.appendChild(el('div', 'pool-label', 'BALLS 11–15 RACKED — TAP TO LOG A POT'));
+
+    const rack = el('div', 'rack');
+    for (let n = 11; n <= 15; n++) {
+      const potInfo = state.tiebreak.potted[n];
+      const b = el('button', 'ball' + (potInfo ? ' potted' : ''));
+      b.style.background = BALL_COLORS[n];
+      b.appendChild(el('div', 'stripe'));
+      b.appendChild(el('span', 'num', n));
+      b.disabled = !!potInfo || state.tiebreak.winnerIdx !== null;
+      b.onclick = () => tiebreakPot(n);
+      rack.appendChild(b);
+    }
+    center.appendChild(rack);
+
+    const controls = el('div', 'controls');
+    const missBtn = el('button', 'ctrl-btn', 'Miss / End turn');
+    missBtn.onclick = tiebreakEndTurn;
+    controls.appendChild(missBtn);
+    const rackBtn = el('button', 'ctrl-btn', 'Reset rack');
+    rackBtn.onclick = () => showConfirm('Reset this rack, including the shootout? Race tally and bet stay.', resetCurrentRack);
+    controls.appendChild(rackBtn);
+    center.appendChild(controls);
+    return center;
   }
 
   const raceBar = el('div', 'race-bar');
