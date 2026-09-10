@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Sixty-One</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --felt: #123324;
+    --felt-dark: #0c2519;
+    --bg: #0a1210;
+    --rail: #8a5a34;
+    --rail-dark: #5e3c22;
+    --ivory: #f1ead9;
+    --ivory-dim: #b9b2a0;
+    --chalk: #5b8fc4;
+    --foul: #c0453a;
+    --win: #d4af6a;
+    --shadow: rgba(0,0,0,0.35);
+    --display: 'Bebas Neue', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--ivory);
+    font-family: var(--mono);
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 14px 40px;
+  }
+  .table-wrap { width: 100%; max-width: 980px; }
+  h1 { font-family: var(--display); margin: 0; letter-spacing: 1px; }
+  .title-row {
+    display: flex; align-items: baseline; justify-content: space-between;
+    padding: 2px 6px 12px;
+  }
+  .title-row h1 { font-size: 34px; }
+  .title-row .sub { font-family: var(--mono); font-size: 11px; color: var(--ivory-dim); letter-spacing: 1.5px; }
+
+  .felt {
+    background: linear-gradient(180deg, var(--felt) 0%, var(--felt-dark) 100%);
+    border: 6px solid var(--rail);
+    border-radius: 18px;
+    box-shadow: inset 0 0 40px var(--shadow), 0 10px 30px var(--shadow);
+    padding: 16px;
+  }
+
+  /* ---- rotate hint (portrait only) ---- */
+  .rotate-hint {
+    display: none; position: fixed; inset: 0; background: rgba(4,8,7,0.94);
+    z-index: 999; align-items: center; justify-content: center; flex-direction: column;
+    text-align: center; padding: 30px; font-family: var(--display); letter-spacing: 1px;
+  }
+  .rotate-hint .glyph { font-size: 46px; margin-bottom: 10px; display: inline-block; animation: rot 1.6s ease-in-out infinite; }
+  @keyframes rot { 0%,100% { transform: rotate(0deg);} 50% { transform: rotate(-90deg);} }
+  .rotate-hint h2 { font-size: 26px; margin: 0 0 6px; color: var(--win); }
+  .rotate-hint p { font-family: var(--mono); font-size: 12px; color: var(--ivory-dim); max-width: 260px; margin: 0 0 18px; }
+  .rotate-hint button {
+    background: none; border: 1px solid var(--ivory-dim); color: var(--ivory-dim);
+    font-family: var(--mono); font-size: 11px; padding: 8px 16px; border-radius: 20px; cursor: pointer;
+  }
+  @media (orientation: portrait) and (max-width: 860px) {
+    .rotate-hint.show { display: flex; }
+  }
+
+  /* ---- setup ---- */
+  .setup label { display: block; font-size: 11px; color: var(--ivory-dim); margin: 16px 0 6px; letter-spacing: 0.5px; }
+  .setup label:first-child { margin-top: 0; }
+  .player-row { display: flex; gap: 8px; margin-bottom: 8px; }
+  input[type="text"], input[type="number"] {
+    width: 100%; background: rgba(0,0,0,0.25); border: 1px solid var(--rail-dark);
+    color: var(--ivory); font-family: var(--mono); font-size: 15px;
+    padding: 10px 12px; border-radius: 8px; outline: none;
+  }
+  input:focus { border-color: var(--chalk); }
+  .player-row input { flex: 1; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .remove-btn {
+    background: none; border: 1px solid var(--rail-dark); color: var(--foul);
+    border-radius: 8px; width: 40px; font-size: 16px; cursor: pointer;
+  }
+  .ghost-btn {
+    background: none; border: 1px dashed var(--ivory-dim); color: var(--ivory-dim);
+    border-radius: 8px; padding: 8px 12px; font-family: var(--mono);
+    font-size: 13px; cursor: pointer; width: 100%; margin-top: 4px;
+  }
+  .primary-btn {
+    width: 100%; background: var(--rail); color: #1a120a; border: none; border-radius: 10px;
+    padding: 14px; font-family: var(--display); font-weight: 400; font-size: 20px;
+    letter-spacing: 1px; cursor: pointer; margin-top: 22px;
+  }
+  .primary-btn:active { transform: scale(0.98); }
+
+  /* ---- race / bet bar ---- */
+  .race-bar {
+    display: grid; grid-template-columns: 1fr auto 1fr;
+    align-items: center; margin-bottom: 12px; gap: 8px;
+  }
+  .race-wins { font-family: var(--display); font-size: 30px; text-align: center; line-height: 1; }
+  .race-wins .lbl { display: block; font-family: var(--mono); font-size: 9px; color: var(--ivory-dim); letter-spacing: 1px; margin-top: 2px; }
+  .race-mid {
+    text-align: center; font-size: 11px; color: var(--win); cursor: pointer;
+    border-bottom: 1px dotted var(--win); padding-bottom: 2px; white-space: nowrap;
+  }
+  .top-links { display: flex; justify-content: flex-end; gap: 12px; margin-bottom: 8px; }
+  .link-btn {
+    color: var(--ivory-dim); background: none; border: none; font-family: var(--mono);
+    font-size: 11px; text-decoration: underline; cursor: pointer; padding: 0;
+  }
+
+  /* ---- landscape game grid ---- */
+  .game-grid { display: grid; grid-template-columns: 200px 1fr 200px; gap: 14px; align-items: start; }
+  .game-grid.stack { grid-template-columns: 1fr; }
+  .players-row-top { display: grid; gap: 10px; margin-bottom: 14px; }
+
+  .player-col {
+    background: rgba(0,0,0,0.28); border: 1px solid var(--rail-dark); border-radius: 10px;
+    padding: 12px; text-align: center; position: relative; transition: border-color .2s, background .2s;
+  }
+  .player-col.active { border-color: var(--chalk); background: rgba(91,143,196,0.12); }
+  .player-col.winner { border-color: var(--win); background: rgba(212,175,106,0.15); }
+  .player-col .pname { font-size: 13px; color: var(--ivory-dim); margin-bottom: 8px; }
+  .potted-box {
+    aspect-ratio: 1; width: 100%; border: 1px solid var(--rail-dark); border-radius: 8px;
+    display: flex; align-items: center; justify-content: center; flex-wrap: wrap; align-content: flex-start;
+    gap: 4px; padding: 8px; margin-bottom: 6px; background: rgba(0,0,0,0.18); overflow-y: auto;
+  }
+  .potted-box.empty { align-items: center; justify-content: center; }
+  .potted-box .placeholder { font-size: 10px; color: var(--ivory-dim); opacity: 0.5; }
+  .mini-ball {
+    width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    position: relative; font-size: 9px; font-weight: 700; color: #fff8ec;
+    box-shadow: inset -2px -2px 3px rgba(0,0,0,0.35), inset 1px 1px 2px rgba(255,255,255,0.25);
+    flex: 0 0 auto;
+  }
+  .mini-ball .stripe { position: absolute; top: 36%; left: 8%; right: 8%; height: 28%; background: #fff8ec; border-radius: 2px; }
+  .mini-ball .num { background: #fff8ec; color: #1a1a1a; border-radius: 50%; width: 14px; height: 14px; display: flex; align-items: center; justify-content: center; font-size: 8px; z-index: 1; }
+  .needs-caption { font-size: 10px; color: var(--ivory-dim); letter-spacing: 0.3px; margin-bottom: 10px; min-height: 13px; }
+  .needs-caption b { color: var(--win); }
+  .needs-caption.impossible b { color: var(--foul); }
+  .pscore { font-family: var(--display); font-size: 40px; line-height: 1; }
+  .pscore-lbl { font-size: 9px; color: var(--ivory-dim); letter-spacing: 1.5px; margin-top: 0px; }
+  .turn-dot {
+    position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--chalk); box-shadow: 0 0 6px var(--chalk);
+  }
+
+  .center-panel { min-width: 0; }
+  .status-row {
+    display: flex; justify-content: space-between; align-items: center; font-size: 11px;
+    color: var(--ivory-dim); padding: 2px 4px 10px;
+  }
+  .status-row b { color: var(--ivory); }
+  .pool-label { font-size: 9px; color: var(--ivory-dim); letter-spacing: 1px; margin-bottom: 8px; text-align: center; }
+  .rack {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 14px;
+  }
+  .ball {
+    aspect-ratio: 1; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    position: relative; cursor: pointer; font-weight: 700; font-size: 15px; color: #fff8ec; border: none;
+    box-shadow: inset -3px -4px 6px rgba(0,0,0,0.35), inset 2px 3px 4px rgba(255,255,255,0.25);
+    transition: transform .15s, opacity .2s;
+  }
+  .ball:active { transform: scale(0.92); }
+  .ball.next-up { outline: 2px solid var(--win); outline-offset: 2px; }
+  .ball.potted { opacity: 0.22; box-shadow: none; cursor: default; }
+  .ball .stripe { position: absolute; top: 38%; left: 6%; right: 6%; height: 24%; background: #fff8ec; border-radius: 3px; }
+  .ball .num {
+    background: #fff8ec; color: #1a1a1a; border-radius: 50%; width: 20px; height: 20px;
+    display: flex; align-items: center; justify-content: center; font-size: 11px; z-index: 1;
+  }
+  .ball.potted .num { background: transparent; color: var(--ivory-dim); }
+
+  .controls { display: flex; gap: 8px; margin-bottom: 14px; }
+  .ctrl-btn {
+    flex: 1; background: rgba(0,0,0,0.25); border: 1px solid var(--rail-dark); color: var(--ivory);
+    padding: 11px; border-radius: 8px; font-family: var(--mono); font-size: 12px; cursor: pointer;
+  }
+  .ctrl-btn.warn { color: var(--foul); border-color: var(--foul); }
+  .ctrl-btn.warn.active { background: var(--foul); color: #fff8ec; }
+  .ctrl-btn.gold { color: var(--win); border-color: var(--win); }
+  .ctrl-btn:active { transform: scale(0.97); }
+  .ctrl-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .foul-flag { font-size: 10px; color: var(--foul); text-align: center; margin: -8px 0 12px; letter-spacing: 0.3px; }
+
+  .log { max-height: 110px; overflow-y: auto; font-size: 11px; color: var(--ivory-dim); border-top: 1px dashed var(--rail-dark); padding-top: 10px; }
+  .log-row { display: flex; justify-content: space-between; padding: 3px 2px; }
+  .log-row .foul-mark { color: var(--foul); }
+  .log-empty { text-align: center; padding: 10px 0; opacity: 0.6; }
+
+  .winner-banner { text-align: center; padding: 6px 0 14px; border-bottom: 1px dashed var(--rail-dark); margin-bottom: 14px; }
+  .winner-banner .trophy-line { font-family: var(--display); font-size: 26px; color: var(--win); letter-spacing: 0.5px; }
+  .winner-banner .sub { font-size: 11px; color: var(--ivory-dim); margin-top: 4px; }
+
+  /* ---- custom modal (replaces confirm/prompt which browsers block in embedded frames) ---- */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(4,8,7,0.72); z-index: 1000;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-box {
+    background: var(--felt-dark); border: 1px solid var(--rail); border-radius: 12px;
+    padding: 18px; max-width: 320px; width: 100%; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  .modal-msg { font-size: 13px; color: var(--ivory); margin-bottom: 14px; line-height: 1.5; }
+  .modal-field label { display: block; font-size: 10px; color: var(--ivory-dim); margin-bottom: 4px; letter-spacing: 0.5px; }
+  .modal-field { margin-bottom: 10px; }
+  .modal-btns { display: flex; gap: 8px; margin-top: 8px; }
+  .modal-btn { flex: 1; padding: 10px; border-radius: 8px; font-family: var(--mono); font-size: 12px; cursor: pointer; border: 1px solid var(--rail-dark); background: none; color: var(--ivory); }
+  .modal-btn.yes { background: var(--rail); color: #1a120a; border: none; }
+  .modal-btn.no { color: var(--ivory-dim); }
+
+  .footnote {
+    text-align: center; font-family: var(--mono); font-size: 10px; color: var(--ivory-dim);
+    opacity: 0.6; letter-spacing: 0.5px; margin-top: 16px;
+  }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-thumb { background: var(--rail-dark); border-radius: 3px; }
+
+  @media (max-width: 700px) {
+    .game-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="rotate-hint" id="rotateHint">
+  <span class="glyph">&#8635;</span>
+  <h2>Turn your phone sideways</h2>
+  <p>Sixty-One is built for landscape &mdash; more room for the table, the rack, and both players.</p>
+  <button id="rotateDismiss">Continue anyway</button>
+</div>
+<div id="root" class="table-wrap"></div>
+<div class="footnote">Made by Zee</div>
+
+<script>
+document.getElementById('rotateHint').classList.add('show');
+document.getElementById('rotateDismiss').onclick = () => {
+  document.getElementById('rotateHint').classList.remove('show');
+  document.getElementById('rotateHint').style.display = 'none';
+};
+
+const BALL_COLORS = {
+  1: '#e8b923', 2: '#1c4e9c', 3: '#c0392b', 4: '#6c3483', 5: '#e07b1d',
+  6: '#1e7145', 7: '#7b241c', 8: '#1a1a1a',
+  9: '#e8b923', 10: '#1c4e9c', 11: '#c0392b', 12: '#6c3483', 13: '#e07b1d', 14: '#1e7145', 15: '#7b241c'
+};
+const TARGET_SCORE = 61;
+const STORAGE_KEY = 'sixtyone-game-v3';
+let state = null;
+let saveTimer = null;
+let foulNext = false; // ephemeral UI flag, not persisted — marks the next tapped ball as a no-score foul
+
+function freshState() {
+  return {
+    phase: 'setup',
+    players: [{ name: '' }, { name: '' }],
+    bet: '',
+    raceTo: 2,
+    raceWins: {},
+    scores: {},
+    potted: {},
+    log: [],
+    currentTurn: 0,
+    winnerIdx: null,
+    matchWinnerIdx: null,
+  };
+}
+
+async function loadState() {
+  try {
+    if (window.storage && window.storage.get) {
+      const res = await window.storage.get(STORAGE_KEY, false);
+      state = res ? JSON.parse(res.value) : freshState();
+    } else {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      state = raw ? JSON.parse(raw) : freshState();
+    }
+  } catch (e) { state = freshState(); }
+  render();
+}
+
+function queueSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try {
+      if (window.storage && window.storage.set) {
+        await window.storage.set(STORAGE_KEY, JSON.stringify(state), false);
+      } else {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      }
+    } catch (e) {}
+  }, 150);
+}
+
+function setState(patch) {
+  state = { ...state, ...patch };
+  queueSave();
+  render();
+}
+
+function remainingBalls() {
+  const arr = [];
+  for (let i = 1; i <= 15; i++) if (!state.potted[i]) arr.push(i);
+  return arr;
+}
+
+function nextUpBall() {
+  const r = remainingBalls();
+  return r.length ? r[0] : null;
+}
+
+function ballsNeeded(playerIdx) {
+  const score = state.scores[playerIdx] || 0;
+  const need = TARGET_SCORE - score;
+  if (need <= 0) return { count: 0, impossible: false, met: true };
+  const remaining = remainingBalls().slice().sort((a, b) => b - a);
+  let sum = 0, count = 0;
+  for (const v of remaining) {
+    if (sum >= need) break;
+    sum += v; count++;
+  }
+  if (sum < need) return { count: remaining.length, impossible: true, met: false };
+  return { count, impossible: false, met: false };
+}
+
+function pottedByPlayer(playerIdx) {
+  return Object.keys(state.potted)
+    .map(Number)
+    .filter(n => state.potted[n].by === playerIdx && !state.potted[n].foul)
+    .sort((a, b) => a - b);
+}
+
+function potBall(num, isFoul) {
+  if (state.potted[num] || state.winnerIdx !== null) return;
+  const shooter = state.currentTurn;
+  const potted = { ...state.potted, [num]: { by: shooter, foul: !!isFoul } };
+  const scores = { ...state.scores };
+  if (!isFoul) scores[shooter] = (scores[shooter] || 0) + num;
+  const log = [{ ball: num, by: shooter, foul: !!isFoul, ts: Date.now() }, ...state.log];
+
+  let winnerIdx = null;
+  if (!isFoul && scores[shooter] >= TARGET_SCORE) winnerIdx = shooter;
+  if (winnerIdx === null && Object.keys(potted).length === 15) {
+    let best = 0, bestScore = -1;
+    state.players.forEach((_, i) => {
+      const s = scores[i] || 0;
+      if (s > bestScore) { bestScore = s; best = i; }
+    });
+    winnerIdx = best;
+  }
+
+  let raceWins = state.raceWins;
+  let matchWinnerIdx = null;
+  if (winnerIdx !== null) {
+    raceWins = { ...raceWins, [winnerIdx]: (raceWins[winnerIdx] || 0) + 1 };
+    if (raceWins[winnerIdx] >= state.raceTo) matchWinnerIdx = winnerIdx;
+  }
+
+  setState({ potted, scores, log, winnerIdx, raceWins, matchWinnerIdx });
+}
+
+function endTurn() {
+  if (state.winnerIdx !== null) return;
+  const n = state.players.length;
+  setState({ currentTurn: (state.currentTurn + 1) % n });
+}
+
+function undoLast() {
+  if (state.log.length === 0) return;
+  const [last, ...rest] = state.log;
+  const potted = { ...state.potted };
+  delete potted[last.ball];
+  const scores = { ...state.scores };
+  if (!last.foul) scores[last.by] = (scores[last.by] || 0) - last.ball;
+  setState({ potted, scores, log: rest, currentTurn: last.by, winnerIdx: null });
+}
+
+// full reset of the CURRENT rack — unfreezes any winner state and,
+// if a rack win had already been tallied, rolls that tally back too.
+function resetCurrentRack() {
+  let raceWins = state.raceWins;
+  if (state.winnerIdx !== null) {
+    raceWins = { ...raceWins };
+    raceWins[state.winnerIdx] = Math.max(0, (raceWins[state.winnerIdx] || 0) - 1);
+  }
+  setState({
+    scores: {}, potted: {}, log: [], currentTurn: 0,
+    winnerIdx: null, matchWinnerIdx: null, raceWins,
+  });
+}
+
+// advance to the next rack after a legitimate win (keeps the tally)
+function nextRack() {
+  const startIdx = state.winnerIdx !== null ? state.winnerIdx : state.currentTurn;
+  setState({ scores: {}, potted: {}, log: [], currentTurn: startIdx, winnerIdx: null });
+}
+
+function newMatch() {
+  setState(freshState());
+}
+
+// ---------- tiny modal system (window.confirm/prompt are blocked in this embedded view) ----------
+function showConfirm(message, onYes) {
+  const overlay = el('div', 'modal-overlay');
+  const box = el('div', 'modal-box');
+  box.appendChild(el('div', 'modal-msg', escapeHtml(message)));
+  const btns = el('div', 'modal-btns');
+  const no = el('button', 'modal-btn no', 'Cancel');
+  const yes = el('button', 'modal-btn yes', 'Confirm');
+  no.onclick = () => document.body.removeChild(overlay);
+  yes.onclick = () => { document.body.removeChild(overlay); onYes(); };
+  btns.appendChild(no); btns.appendChild(yes);
+  box.appendChild(btns);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+}
+
+function showEditBetRace() {
+  const overlay = el('div', 'modal-overlay');
+  const box = el('div', 'modal-box');
+  box.appendChild(el('div', 'modal-msg', 'Edit bet & race'));
+
+  const betField = el('div', 'modal-field');
+  betField.appendChild(el('label', '', 'BET'));
+  const betInput = document.createElement('input');
+  betInput.type = 'text'; betInput.value = state.bet || '';
+  betField.appendChild(betInput);
+
+  const raceField = el('div', 'modal-field');
+  raceField.appendChild(el('label', '', 'RACE TO'));
+  const raceInput = document.createElement('input');
+  raceInput.type = 'number'; raceInput.min = '1'; raceInput.value = state.raceTo;
+  raceField.appendChild(raceInput);
+
+  box.appendChild(betField);
+  box.appendChild(raceField);
+
+  const btns = el('div', 'modal-btns');
+  const no = el('button', 'modal-btn no', 'Cancel');
+  const yes = el('button', 'modal-btn yes', 'Save');
+  no.onclick = () => document.body.removeChild(overlay);
+  yes.onclick = () => {
+    document.body.removeChild(overlay);
+    setState({ bet: betInput.value, raceTo: parseInt(raceInput.value) || state.raceTo });
+  };
+  btns.appendChild(no); btns.appendChild(yes);
+  box.appendChild(btns);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  betInput.focus();
+}
+
+function render() {
+  const root = document.getElementById('root');
+  root.innerHTML = '';
+  root.appendChild(state.phase === 'setup' ? renderSetup() : renderGame());
+}
+
+function el(tag, cls, html) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html !== undefined) e.innerHTML = html;
+  return e;
+}
+
+function miniBall(n) {
+  const b = el('div', 'mini-ball');
+  b.style.background = BALL_COLORS[n];
+  if (n >= 9) b.appendChild(el('div', 'stripe'));
+  b.appendChild(el('span', 'num', n));
+  return b;
+}
+
+function renderSetup() {
+  const wrap = el('div');
+  const title = el('div', 'title-row');
+  title.innerHTML = `<h1>SIXTY-ONE</h1><span class="sub">ROTATION SCOREKEEPER</span>`;
+  wrap.appendChild(title);
+
+  const felt = el('div', 'felt setup');
+  felt.appendChild(el('label', '', 'PLAYERS'));
+
+  state.players.forEach((p, i) => {
+    const row = el('div', 'player-row');
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = `Player ${i + 1}`;
+    input.value = p.name;
+    input.oninput = (e) => {
+      const players = [...state.players];
+      players[i] = { name: e.target.value };
+      state = { ...state, players };
+      queueSave();
+    };
+    row.appendChild(input);
+    if (state.players.length > 2) {
+      const rm = el('button', 'remove-btn', '×');
+      rm.onclick = () => setState({ players: state.players.filter((_, j) => j !== i) });
+      row.appendChild(rm);
+    }
+    felt.appendChild(row);
+  });
+
+  if (state.players.length < 4) {
+    const add = el('button', 'ghost-btn', '+ Add player');
+    add.onclick = () => setState({ players: [...state.players, { name: '' }] });
+    felt.appendChild(add);
+  }
+
+  const twoCol = el('div', 'two-col');
+  const betWrap = el('div');
+  betWrap.appendChild(el('label', '', 'BET'));
+  const betInput = document.createElement('input');
+  betInput.type = 'text';
+  betInput.placeholder = 'e.g. 500';
+  betInput.value = state.bet;
+  betInput.oninput = (e) => { state = { ...state, bet: e.target.value }; queueSave(); };
+  betWrap.appendChild(betInput);
+
+  const raceWrap = el('div');
+  raceWrap.appendChild(el('label', '', 'RACE TO'));
+  const raceInput = document.createElement('input');
+  raceInput.type = 'number';
+  raceInput.min = '1';
+  raceInput.value = state.raceTo;
+  raceInput.oninput = (e) => { state = { ...state, raceTo: parseInt(e.target.value) || 1 }; queueSave(); };
+  raceWrap.appendChild(raceInput);
+
+  twoCol.appendChild(betWrap);
+  twoCol.appendChild(raceWrap);
+  felt.appendChild(twoCol);
+
+  const startBtn = el('button', 'primary-btn', "RACK 'EM — START GAME");
+  startBtn.onclick = () => {
+    const names = state.players.map((p, i) => ({ name: p.name.trim() || `Player ${i + 1}` }));
+    setState({ players: names, phase: 'game' });
+  };
+  felt.appendChild(startBtn);
+
+  wrap.appendChild(felt);
+  return wrap;
+}
+
+function renderPlayerCol(i) {
+  const isActive = i === state.currentTurn && state.winnerIdx === null;
+  const isWinner = i === state.winnerIdx;
+  const col = el('div', 'player-col' + (isActive ? ' active' : '') + (isWinner ? ' winner' : ''));
+  col.appendChild(el('div', 'pname', escapeHtml(state.players[i].name)));
+
+  const potted = pottedByPlayer(i);
+  const box = el('div', 'potted-box' + (potted.length === 0 ? ' empty' : ''));
+  if (potted.length === 0) {
+    box.appendChild(el('span', 'placeholder', 'no balls yet'));
+  } else {
+    potted.forEach(n => box.appendChild(miniBall(n)));
+  }
+  col.appendChild(box);
+
+  const nb = ballsNeeded(i);
+  let capText;
+  let capClass = 'needs-caption';
+  if (nb.met) capText = `<b>target met</b>`;
+  else if (nb.impossible) { capText = `can't reach 61 this rack`; capClass += ' impossible'; }
+  else capText = `needs <b>${nb.count}</b> more ball${nb.count === 1 ? '' : 's'}`;
+  col.appendChild(el('div', capClass, capText));
+
+  col.appendChild(el('div', 'pscore', state.scores[i] || 0));
+  col.appendChild(el('div', 'pscore-lbl', 'SCORE'));
+  if (isActive) col.appendChild(el('div', 'turn-dot'));
+  col.onclick = () => { if (state.winnerIdx === null) setState({ currentTurn: i }); };
+  return col;
+}
+
+function renderCenterPanel() {
+  const center = el('div', 'center-panel');
+
+  if (state.matchWinnerIdx !== null) {
+    const banner = el('div', 'winner-banner');
+    banner.innerHTML = `<div class="trophy-line">${escapeHtml(state.players[state.matchWinnerIdx].name)} TAKES THE MATCH</div>
+      <div class="sub">${state.raceWins[state.matchWinnerIdx]} racks won ${state.bet ? '· bet ' + escapeHtml(state.bet) : ''}</div>`;
+    center.appendChild(banner);
+  } else if (state.winnerIdx !== null) {
+    const banner = el('div', 'winner-banner');
+    banner.innerHTML = `<div class="trophy-line">${escapeHtml(state.players[state.winnerIdx].name)} TAKES THE RACK</div>
+      <div class="sub">${state.scores[state.winnerIdx] || 0} points this rack</div>`;
+    center.appendChild(banner);
+  }
+
+  const raceBar = el('div', 'race-bar');
+  const leftWins = el('div', 'race-wins', `${state.raceWins[0] || 0}<span class="lbl">${escapeHtml(shortName(0))}</span>`);
+  const mid = el('div', 'race-mid', `bet ${escapeHtml(state.bet || '—')} · race to ${state.raceTo}`);
+  mid.onclick = showEditBetRace;
+  const rightWins = el('div', 'race-wins', `${state.raceWins[1] || 0}<span class="lbl">${escapeHtml(shortName(1))}</span>`);
+  raceBar.appendChild(leftWins);
+  raceBar.appendChild(mid);
+  raceBar.appendChild(rightWins);
+  center.appendChild(raceBar);
+
+  const nb2 = nextUpBall();
+  const status = el('div', 'status-row');
+  status.innerHTML = `<span>Next ball: <b>${nb2 || '—'}</b></span><span>On table: <b>${remainingBalls().reduce((a,b)=>a+b,0)}</b> pts</span>`;
+  center.appendChild(status);
+  center.appendChild(el('div', 'pool-label', `BALLS ON THE TABLE — TAP TO LOG A POT · ball ${nb2 || '—'} is up next, but combos can drop others out of order`));
+
+  const rack = el('div', 'rack');
+  for (let n = 1; n <= 15; n++) {
+    const potInfo = state.potted[n];
+    const b = el('button', 'ball' + (potInfo ? ' potted' : '') + (!potInfo && n === nb2 ? ' next-up' : ''));
+    b.style.background = BALL_COLORS[n];
+    if (n >= 9) b.appendChild(el('div', 'stripe'));
+    b.appendChild(el('span', 'num', n));
+    b.disabled = !!potInfo || state.winnerIdx !== null;
+    b.onclick = () => {
+      const wasFoul = foulNext;
+      foulNext = false;
+      potBall(n, wasFoul);
+    };
+    rack.appendChild(b);
+  }
+  center.appendChild(rack);
+  if (foulNext) center.appendChild(el('div', 'foul-flag', 'next pot logged as a FOUL — tap a ball, or tap the foul button again to cancel'));
+
+  const controls = el('div', 'controls');
+  const foulBtn = el('button', 'ctrl-btn warn' + (foulNext ? ' active' : ''), foulNext ? 'Cancel foul' : 'Mark next pot as foul');
+  foulBtn.disabled = state.winnerIdx !== null;
+  foulBtn.onclick = () => { foulNext = !foulNext; render(); };
+  controls.appendChild(foulBtn);
+  if (state.winnerIdx !== null) {
+    const nextBtn = el('button', 'ctrl-btn gold', state.matchWinnerIdx !== null ? 'Match over' : 'Next rack');
+    nextBtn.disabled = state.matchWinnerIdx !== null;
+    nextBtn.onclick = nextRack;
+    controls.appendChild(nextBtn);
+  } else {
+    const missBtn = el('button', 'ctrl-btn', 'Miss / End turn');
+    missBtn.onclick = endTurn;
+    controls.appendChild(missBtn);
+  }
+  const undoBtn = el('button', 'ctrl-btn warn', 'Undo shot');
+  undoBtn.disabled = state.log.length === 0;
+  undoBtn.onclick = undoLast;
+  const rackBtn = el('button', 'ctrl-btn', 'Reset rack');
+  rackBtn.onclick = () => showConfirm('Reset this rack? Scores and potted balls will clear. Race tally and bet stay (any win already counted for this rack is rolled back).', resetCurrentRack);
+  controls.appendChild(undoBtn);
+  controls.appendChild(rackBtn);
+  center.appendChild(controls);
+
+  const log = el('div', 'log');
+  if (state.log.length === 0) {
+    log.appendChild(el('div', 'log-empty', 'No shots yet'));
+  } else {
+    state.log.forEach(l => {
+      const row = el('div', 'log-row');
+      const name = escapeHtml(state.players[l.by].name);
+      row.innerHTML = l.foul
+        ? `<span class="foul-mark">${name} — foul on ${l.ball}</span><span>+0</span>`
+        : `<span>${name} potted ${l.ball}</span><span>+${l.ball}</span>`;
+      log.appendChild(row);
+    });
+  }
+  center.appendChild(log);
+
+  return center;
+}
+
+function renderGame() {
+  const wrap = el('div');
+
+  const links = el('div', 'top-links');
+  const newMatchBtn = el('button', 'link-btn', 'new players');
+  newMatchBtn.onclick = () => showConfirm('End this match and set up new players?', newMatch);
+  links.appendChild(newMatchBtn);
+  wrap.appendChild(links);
+
+  const felt = el('div', 'felt');
+  const grid = el('div', 'game-grid' + (state.players.length !== 2 ? ' stack' : ''));
+
+  if (state.players.length === 2) {
+    grid.appendChild(renderPlayerCol(0));
+    grid.appendChild(renderCenterPanel());
+    grid.appendChild(renderPlayerCol(1));
+  } else {
+    const topRow = el('div', 'players-row-top');
+    topRow.style.gridTemplateColumns = `repeat(${state.players.length}, 1fr)`;
+    state.players.forEach((_, i) => topRow.appendChild(renderPlayerCol(i)));
+    grid.appendChild(topRow);
+    grid.appendChild(renderCenterPanel());
+  }
+
+  felt.appendChild(grid);
+  wrap.appendChild(felt);
+  return wrap;
+}
+
+function shortName(idx) {
+  const n = state.players[idx] ? state.players[idx].name : '';
+  return n.length > 8 ? n.slice(0, 8) + '…' : n;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+loadState();
+</script>
+</body>
+</html>
